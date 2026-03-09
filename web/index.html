@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drake's Icarus Save Editor</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <p class="eyebrow">Drake's Local Save Utility</p>
+        <h1>Drake's Icarus Save Editor</h1>
+        <p class="lede">Quick edits for currencies and characters, plus raw JSON access for the rest of the save folder.</p>
+      </div>
+
+      <div class="sidebar-block">
+        <p class="block-label">Save Root</p>
+        <p id="saveRoot" class="path">Scanning...</p>
+      </div>
+
+      <div class="sidebar-block">
+        <div class="block-row">
+          <p class="block-label">Accounts</p>
+          <button id="refreshAccountsBtn" class="ghost-button" type="button">Rescan</button>
+        </div>
+        <div id="accountList" class="account-list"></div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">Safety</p>
+          <h2>Close Icarus before you save changes.</h2>
+          <p class="hero-copy">The editor writes directly into the live save folder and creates timestamped `.editorbackup_*` files before each write.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="openFolderBtn" class="primary-button" type="button" disabled>Open Save Folder</button>
+          <button id="reloadAccountBtn" class="ghost-button" type="button" disabled>Reload Account</button>
+        </div>
+      </section>
+
+      <section id="emptyState" class="panel empty-state">
+        <h2>No Icarus accounts were found.</h2>
+        <p>The app scans `%LOCALAPPDATA%\Icarus\Saved\PlayerData`. Start the game once or verify the save folder exists, then click <strong>Rescan</strong>.</p>
+      </section>
+
+      <section id="workspace" class="workspace hidden">
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Overview</p>
+              <h2 id="accountTitle">Account</h2>
+            </div>
+            <p id="statusLine" class="status-line">Ready.</p>
+          </div>
+          <div id="summaryGrid" class="summary-grid"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Profile</p>
+              <h2>Currencies And Meta Progress</h2>
+            </div>
+            <div class="section-actions">
+              <button id="maxCurrenciesBtn" class="ghost-button" type="button">Set Known Currencies To 999999</button>
+              <button id="saveProfileBtn" class="primary-button" type="button">Save Profile</button>
+            </div>
+          </div>
+          <div id="profileEditor"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Characters</p>
+              <h2>Detected Character Saves</h2>
+            </div>
+            <button id="saveCharactersBtn" class="primary-button" type="button">Save Characters</button>
+          </div>
+          <div id="characterEditor" class="character-list"></div>
+        </section>
+
+        <section class="grid-two">
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Progress</p>
+                <h2>Accolades Summary</h2>
+              </div>
+              <button id="openAccoladesBtn" class="ghost-button" type="button">Open Raw File</button>
+            </div>
+            <div id="accoladeSummary"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Bestiary</p>
+                <h2>Creature Discovery</h2>
+              </div>
+              <button id="openBestiaryBtn" class="ghost-button" type="button">Open Raw File</button>
+            </div>
+            <div id="bestiarySummary"></div>
+          </section>
+        </section>
+
+        <section class="grid-two">
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Workshop Inventory</p>
+                <h2>MetaInventory Summary</h2>
+              </div>
+              <button id="openMetaInventoryBtn" class="ghost-button" type="button">Open Raw File</button>
+            </div>
+            <div id="inventorySummary"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Loadouts</p>
+                <h2>Current Loadout Records</h2>
+              </div>
+              <button id="openLoadoutsBtn" class="ghost-button" type="button">Open Raw File</button>
+            </div>
+            <div id="loadoutSummary"></div>
+          </section>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Prospect Archive</p>
+              <h2>Saved Prospect Files</h2>
+            </div>
+            <button id="openProspectsFolderBtn" class="ghost-button" type="button">Open Prospects Folder</button>
+          </div>
+          <div id="prospectArchiveSummary"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Associated Prospects</p>
+              <h2>Slot Files</h2>
+            </div>
+          </div>
+          <div id="prospectSummary"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Raw Editor</p>
+              <h2>Any JSON Save File Under This Account</h2>
+            </div>
+            <div class="section-actions">
+              <select id="fileSelect"></select>
+              <button id="loadFileBtn" class="ghost-button" type="button">Load File</button>
+              <button id="formatJsonBtn" class="ghost-button" type="button">Format JSON</button>
+              <button id="saveFileBtn" class="primary-button" type="button">Save Raw JSON</button>
+            </div>
+          </div>
+          <p id="fileMeta" class="file-meta">Pick a file to begin.</p>
+          <textarea id="rawEditor" class="raw-editor" spellcheck="false"></textarea>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Backups</p>
+              <h2>Editor Backup Files</h2>
+            </div>
+            <button id="deleteAllBackupsBtn" class="danger-button" type="button" disabled>Delete All Backups</button>
+          </div>
+          <div id="backupSummary"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
