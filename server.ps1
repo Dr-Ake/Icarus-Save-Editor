@@ -19,12 +19,14 @@ else {
 
 $script:RootDir = Split-Path -Parent $script:ScriptPath
 $script:WebRoot = Join-Path $script:RootDir 'web'
+$script:DefaultSaveRoot = Join-Path $env:LOCALAPPDATA 'Icarus\Saved\PlayerData'
 $script:SaveRoot = if ([string]::IsNullOrWhiteSpace($SaveRoot)) {
-    Join-Path $env:LOCALAPPDATA 'Icarus\Saved\PlayerData'
+    $script:DefaultSaveRoot
 }
 else {
     [System.IO.Path]::GetFullPath($SaveRoot)
 }
+$script:SaveRootIsCustom = -not [string]::IsNullOrWhiteSpace($SaveRoot)
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Write-Log {
@@ -125,6 +127,34 @@ function Get-AccountPath {
     return $accountPath
 }
 
+function Get-SaveRootStatus {
+    return [ordered]@{
+        saveRoot        = $script:SaveRoot
+        defaultSaveRoot = $script:DefaultSaveRoot
+        exists          = Test-Path -LiteralPath $script:SaveRoot -PathType Container
+        isCustom        = $script:SaveRootIsCustom
+    }
+}
+
+function Set-SaveRootPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        $script:SaveRoot = $script:DefaultSaveRoot
+        $script:SaveRootIsCustom = $false
+        return (Get-SaveRootStatus)
+    }
+
+    $resolved = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $resolved -PathType Container)) {
+        throw "The save root '$resolved' was not found."
+    }
+
+    $script:SaveRoot = $resolved
+    $script:SaveRootIsCustom = $true
+    return (Get-SaveRootStatus)
+}
+
 function Backup-File {
     param([string]$Path)
 
@@ -146,6 +176,20 @@ function Test-BackupPath {
     }
 
     return ($RelativePath.Replace('\', '/') -match '\.editorbackup_\d{8}-\d{6}$')
+}
+
+function Get-BackupSourceRelativePath {
+    param([string]$RelativePath)
+
+    if (-not (Test-BackupPath -RelativePath $RelativePath)) {
+        throw 'Only .editorbackup_* files created by this editor can be restored here.'
+    }
+
+    if ($RelativePath.Replace('\', '/') -match '^(.*)\.editorbackup_\d{8}-\d{6}$') {
+        return $Matches[1]
+    }
+
+    throw "Could not determine the original file for '$RelativePath'."
 }
 
 function Read-StringifiedArrayFile {
@@ -328,6 +372,73 @@ function Get-AssociatedProspectSummary {
     }
 
     return $summary
+}
+
+function Get-MountSummary {
+    param([string]$AccountPath)
+
+    $path = Join-Path $AccountPath 'Mounts.json'
+    $json = Read-JsonFile -Path $path
+    if ($null -eq $json) {
+        return [ordered]@{
+            hasFile      = $false
+            relativePath = 'Mounts.json'
+            mountCount   = 0
+            typeCount    = 0
+            highestLevel = 0
+            types        = @()
+            entries      = @()
+        }
+    }
+
+    $entries = @()
+    $index = 0
+
+    foreach ($mount in @($json.SavedMounts)) {
+        $entries += [pscustomobject]@{
+            index         = $index
+            mountName     = $mount.MountName
+            mountLevel    = if ($null -ne $mount.MountLevel) { [int]$mount.MountLevel } else { 0 }
+            mountType     = $mount.MountType
+            mountIconName = $mount.MountIconName
+            databaseGuid  = $mount.DatabaseGUID
+        }
+        $index++
+    }
+
+    $types = @(
+        $entries |
+            Group-Object mountType |
+            Sort-Object Count -Descending |
+            ForEach-Object {
+                [pscustomobject]@{
+                    mountType = $_.Name
+                    count     = $_.Count
+                }
+            }
+    )
+
+    $highestLevel = if ($entries.Count) {
+        [int](($entries | Measure-Object mountLevel -Maximum).Maximum)
+    }
+    else {
+        0
+    }
+
+    return [ordered]@{
+        hasFile      = $true
+        relativePath = 'Mounts.json'
+        mountCount   = $entries.Count
+        typeCount    = $types.Count
+        highestLevel = $highestLevel
+        types        = $types
+        entries      = @(
+            $entries |
+                Sort-Object -Property `
+                    @{ Expression = { $_.mountLevel }; Descending = $true }, `
+                    @{ Expression = { $_.mountName }; Descending = $false }
+        )
+    }
 }
 
 function Get-AccoladeSummary {
@@ -558,6 +669,34 @@ function Remove-BackupFile {
     Remove-Item -LiteralPath $target -Force
 }
 
+function Restore-BackupFile {
+    param(
+        [string]$AccountPath,
+        [string]$RelativePath
+    )
+
+    $backupPath = Resolve-ChildPath -BasePath $AccountPath -RelativePath $RelativePath
+    if (-not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
+        throw "The backup file '$RelativePath' does not exist."
+    }
+
+    $sourceRelativePath = Get-BackupSourceRelativePath -RelativePath $RelativePath
+    $sourcePath = Resolve-ChildPath -BasePath $AccountPath -RelativePath $sourceRelativePath
+    $sourceDirectory = Split-Path -Parent $sourcePath
+
+    if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $sourceDirectory -Force
+    }
+
+    $backup = Backup-File -Path $sourcePath
+    Copy-Item -LiteralPath $backupPath -Destination $sourcePath -Force
+
+    return [ordered]@{
+        restoredPath = $sourceRelativePath
+        backup       = $backup
+    }
+}
+
 function Get-JsonFiles {
     param([string]$AccountPath)
 
@@ -613,6 +752,7 @@ function Get-AccountBundle {
         metaInventorySummary      = @(Get-MetaInventorySummary -AccountPath $accountPath)
         loadoutSummary            = @(Get-LoadoutSummary -AccountPath $accountPath)
         associatedProspectSummary = @(Get-AssociatedProspectSummary -AccountPath $accountPath)
+        mountSummary              = Get-MountSummary -AccountPath $accountPath
         accoladeSummary           = Get-AccoladeSummary -AccountPath $accountPath
         bestiarySummary           = Get-BestiarySummary -AccountPath $accountPath
         prospectArchiveSummary    = Get-ProspectArchiveSummary -AccountPath $accountPath
@@ -813,10 +953,29 @@ function Handle-ApiRequest {
 
         '^/api/accounts/?$' {
             Assert-HttpMethod -Request $request -Expected 'GET'
+            $saveRootStatus = Get-SaveRootStatus
             Send-Json -Response $response -StatusCode 200 -Payload @{
-                ok       = $true
-                saveRoot = $script:SaveRoot
-                accounts = @(Get-Accounts)
+                ok              = $true
+                saveRoot        = $saveRootStatus.saveRoot
+                defaultSaveRoot = $saveRootStatus.defaultSaveRoot
+                saveRootExists  = $saveRootStatus.exists
+                isCustomSaveRoot = $saveRootStatus.isCustom
+                accounts        = @(Get-Accounts)
+            }
+            return
+        }
+
+        '^/api/save-root/?$' {
+            Assert-HttpMethod -Request $request -Expected 'POST'
+            $body = Read-RequestJson -Request $request
+            $saveRootStatus = Set-SaveRootPath -Path $body.saveRoot
+            Send-Json -Response $response -StatusCode 200 -Payload @{
+                ok               = $true
+                saveRoot         = $saveRootStatus.saveRoot
+                defaultSaveRoot  = $saveRootStatus.defaultSaveRoot
+                saveRootExists   = $saveRootStatus.exists
+                isCustomSaveRoot = $saveRootStatus.isCustom
+                accounts         = @(Get-Accounts)
             }
             return
         }
@@ -864,6 +1023,21 @@ function Handle-ApiRequest {
             Send-Json -Response $response -StatusCode 200 -Payload @{
                 ok           = $true
                 relativePath = $body.relativePath
+            }
+            return
+        }
+
+        '^/api/account/([^/]+)/backup/restore/?$' {
+            Assert-HttpMethod -Request $request -Expected 'POST'
+            $steamId = [System.Uri]::UnescapeDataString($Matches[1])
+            $body = Read-RequestJson -Request $request
+            $accountPath = Get-AccountPath -SteamId $steamId
+            $restore = Restore-BackupFile -AccountPath $accountPath -RelativePath $body.relativePath
+            Send-Json -Response $response -StatusCode 200 -Payload @{
+                ok           = $true
+                relativePath = $body.relativePath
+                restoredPath = $restore.restoredPath
+                backup       = $restore.backup
             }
             return
         }

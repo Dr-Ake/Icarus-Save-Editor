@@ -195,7 +195,8 @@ select {
 .profile-grid,
 .character-list,
 .resource-list,
-.backup-list {
+.backup-list,
+.mount-grid {
   display: grid;
   gap: 14px;
 }
@@ -240,6 +241,23 @@ select {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.sidebar-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.sidebar-actions,
+.backup-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sidebar-actions {
+  margin-top: 12px;
 }
 
 .primary-button,
@@ -567,7 +585,8 @@ textarea {
 }
 
 .loadout-grid,
-.prospect-grid {
+.prospect-grid,
+.mount-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
@@ -593,10 +612,22 @@ textarea {
 }
 
 .loadout-card,
-.prospect-card {
+.prospect-card,
+.mount-card {
   align-items: flex-start;
   gap: 12px;
   flex-direction: column;
+}
+
+.mount-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background: var(--panel-strong);
+}
+
+.section-actions input[type="search"] {
+  min-width: 220px;
 }
 
 .mono {
@@ -665,6 +696,11 @@ textarea {
   .backup-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .sidebar-actions,
+  .backup-actions {
+    width: 100%;
   }
 
   .backup-row .danger-button {

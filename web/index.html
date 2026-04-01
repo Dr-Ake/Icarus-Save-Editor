@@ -18,6 +18,15 @@
       <div class="sidebar-block">
         <p class="block-label">Save Root</p>
         <p id="saveRoot" class="path">Scanning...</p>
+        <p id="saveRootHelp" class="file-meta">Looking for the default Icarus save location.</p>
+        <label class="sidebar-field">
+          <span>Custom PlayerData Path</span>
+          <input id="saveRootInput" type="text" placeholder="C:\Users\You\AppData\Local\Icarus\Saved\PlayerData">
+        </label>
+        <div class="sidebar-actions">
+          <button id="useSaveRootBtn" class="ghost-button" type="button">Use This Folder</button>
+          <button id="resetSaveRootBtn" class="ghost-button" type="button">Use Default</button>
+        </div>
       </div>
 
       <div class="sidebar-block">
@@ -43,8 +52,8 @@
       </section>
 
       <section id="emptyState" class="panel empty-state">
-        <h2>No Icarus accounts were found.</h2>
-        <p>The app scans `%LOCALAPPDATA%\Icarus\Saved\PlayerData`. Start the game once or verify the save folder exists, then click <strong>Rescan</strong>.</p>
+        <h2 id="emptyStateTitle">No Icarus accounts were found.</h2>
+        <p id="emptyStateCopy">The app scans `%LOCALAPPDATA%\Icarus\Saved\PlayerData`. Start the game once or verify the save folder exists, then click <strong>Rescan</strong>.</p>
       </section>
 
       <section id="workspace" class="workspace hidden">
@@ -135,6 +144,17 @@
         <section class="panel">
           <div class="section-head">
             <div>
+              <p class="eyebrow">Mounts</p>
+              <h2>Saved Mount Records</h2>
+            </div>
+            <button id="openMountsBtn" class="ghost-button" type="button">Open Raw File</button>
+          </div>
+          <div id="mountSummary"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
               <p class="eyebrow">Prospect Archive</p>
               <h2>Saved Prospect Files</h2>
             </div>
@@ -160,12 +180,14 @@
               <h2>Any JSON Save File Under This Account</h2>
             </div>
             <div class="section-actions">
+              <input id="fileFilterInput" type="search" placeholder="Filter files">
               <select id="fileSelect"></select>
               <button id="loadFileBtn" class="ghost-button" type="button">Load File</button>
               <button id="formatJsonBtn" class="ghost-button" type="button">Format JSON</button>
               <button id="saveFileBtn" class="primary-button" type="button">Save Raw JSON</button>
             </div>
           </div>
+          <p id="fileListMeta" class="file-meta">Showing all files.</p>
           <p id="fileMeta" class="file-meta">Pick a file to begin.</p>
           <textarea id="rawEditor" class="raw-editor" spellcheck="false"></textarea>
         </section>

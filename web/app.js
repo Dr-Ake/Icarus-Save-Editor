@@ -65,17 +65,29 @@
   const state = {
     accounts: [],
     selectedAccountId: null,
+    saveRoot: '',
+    defaultSaveRoot: '',
+    saveRootExists: false,
+    isCustomSaveRoot: false,
     bundle: null,
-    currentRawPath: null
+    currentRawPath: null,
+    selectedRawPath: null,
+    fileFilterText: ''
   };
 
   const refs = {
     saveRoot: document.getElementById('saveRoot'),
+    saveRootHelp: document.getElementById('saveRootHelp'),
+    saveRootInput: document.getElementById('saveRootInput'),
+    useSaveRootBtn: document.getElementById('useSaveRootBtn'),
+    resetSaveRootBtn: document.getElementById('resetSaveRootBtn'),
     accountList: document.getElementById('accountList'),
     refreshAccountsBtn: document.getElementById('refreshAccountsBtn'),
     openFolderBtn: document.getElementById('openFolderBtn'),
     reloadAccountBtn: document.getElementById('reloadAccountBtn'),
     emptyState: document.getElementById('emptyState'),
+    emptyStateTitle: document.getElementById('emptyStateTitle'),
+    emptyStateCopy: document.getElementById('emptyStateCopy'),
     workspace: document.getElementById('workspace'),
     accountTitle: document.getElementById('accountTitle'),
     statusLine: document.getElementById('statusLine'),
@@ -89,14 +101,18 @@
     bestiarySummary: document.getElementById('bestiarySummary'),
     inventorySummary: document.getElementById('inventorySummary'),
     loadoutSummary: document.getElementById('loadoutSummary'),
+    mountSummary: document.getElementById('mountSummary'),
     prospectArchiveSummary: document.getElementById('prospectArchiveSummary'),
     prospectSummary: document.getElementById('prospectSummary'),
     openAccoladesBtn: document.getElementById('openAccoladesBtn'),
     openBestiaryBtn: document.getElementById('openBestiaryBtn'),
     openMetaInventoryBtn: document.getElementById('openMetaInventoryBtn'),
     openLoadoutsBtn: document.getElementById('openLoadoutsBtn'),
+    openMountsBtn: document.getElementById('openMountsBtn'),
     openProspectsFolderBtn: document.getElementById('openProspectsFolderBtn'),
+    fileFilterInput: document.getElementById('fileFilterInput'),
     fileSelect: document.getElementById('fileSelect'),
+    fileListMeta: document.getElementById('fileListMeta'),
     fileMeta: document.getElementById('fileMeta'),
     loadFileBtn: document.getElementById('loadFileBtn'),
     formatJsonBtn: document.getElementById('formatJsonBtn'),
@@ -153,6 +169,55 @@
     }
 
     return payload;
+  }
+
+  function applyAccountsPayload(payload) {
+    state.saveRoot = payload.saveRoot || '';
+    state.defaultSaveRoot = payload.defaultSaveRoot || '';
+    state.saveRootExists = Boolean(payload.saveRootExists);
+    state.isCustomSaveRoot = Boolean(payload.isCustomSaveRoot);
+    state.accounts = payload.accounts || [];
+  }
+
+  function renderSaveRootUi() {
+    const activeRoot = state.saveRoot || state.defaultSaveRoot || 'Not found.';
+    refs.saveRoot.textContent = activeRoot;
+    refs.saveRootInput.placeholder = state.defaultSaveRoot || refs.saveRootInput.placeholder;
+
+    if (document.activeElement !== refs.saveRootInput) {
+      refs.saveRootInput.value = state.isCustomSaveRoot ? state.saveRoot : '';
+    }
+
+    if (!state.saveRootExists) {
+      refs.saveRootHelp.textContent = 'Default save root was not found. Paste the Icarus PlayerData folder here.';
+    } else if (state.isCustomSaveRoot) {
+      refs.saveRootHelp.textContent = 'Using a custom PlayerData folder for this session.';
+    } else {
+      refs.saveRootHelp.textContent = 'Using the default Icarus PlayerData folder.';
+    }
+
+    refs.resetSaveRootBtn.disabled = !state.isCustomSaveRoot;
+  }
+
+  function renderEmptyStateMessage() {
+    if (!refs.emptyStateTitle || !refs.emptyStateCopy) {
+      return;
+    }
+
+    if (!state.saveRootExists) {
+      refs.emptyStateTitle.textContent = 'Icarus save folder not found.';
+      refs.emptyStateCopy.innerHTML = `The default scan looked in <strong>${escapeHtml(state.defaultSaveRoot || '%LOCALAPPDATA%\\Icarus\\Saved\\PlayerData')}</strong>. Paste the correct <strong>PlayerData</strong> path in the sidebar, then click <strong>Use This Folder</strong>.`;
+      return;
+    }
+
+    if (state.isCustomSaveRoot) {
+      refs.emptyStateTitle.textContent = 'No accounts were found in this folder.';
+      refs.emptyStateCopy.innerHTML = `The editor scanned <strong>${escapeHtml(state.saveRoot)}</strong> but did not find any Steam account folders. Verify the folder and try again, or switch back to the default path.`;
+      return;
+    }
+
+    refs.emptyStateTitle.textContent = 'No Icarus accounts were found.';
+    refs.emptyStateCopy.innerHTML = `The app scanned <strong>${escapeHtml(state.saveRoot || state.defaultSaveRoot || '%LOCALAPPDATA%\\Icarus\\Saved\\PlayerData')}</strong>. Start the game once or verify the save folder exists, then click <strong>Rescan</strong>.`;
   }
 
   function normalizeResourceName(value) {
@@ -223,6 +288,16 @@
 
   function formatIsoTimestamp(value) {
     return String(value || '').replace('T', ' ');
+  }
+
+  function getFilteredFiles() {
+    const files = state.bundle?.files || [];
+    const filter = (state.fileFilterText || '').trim().toLowerCase();
+    if (!filter) {
+      return files;
+    }
+
+    return files.filter((file) => String(file.relativePath || '').toLowerCase().includes(filter));
   }
 
   function normalizeFlags(flags) {
@@ -357,7 +432,8 @@
 
   function renderAccounts() {
     refs.accountList.innerHTML = '';
-    refs.saveRoot.textContent = state.saveRoot || 'Not found.';
+    renderSaveRootUi();
+    renderEmptyStateMessage();
 
     if (!state.accounts.length) {
       refs.accountList.innerHTML = '<div class="empty-box">No accounts detected.</div>';
@@ -395,6 +471,7 @@
       { label: 'Meta Resources', value: (bundle.profile?.MetaResources || []).length },
       { label: 'Workshop Items', value: bundle.metaInventorySummary.length },
       { label: 'Loadouts', value: bundle.loadoutSummary.length },
+      { label: 'Mounts', value: bundle.mountSummary?.mountCount || 0 },
       { label: 'Accolades', value: bundle.accoladeSummary?.completedCount || 0 },
       { label: 'Bestiary Species', value: bundle.bestiarySummary?.creatureCount || 0 },
       { label: 'Prospect Files', value: bundle.prospectArchiveSummary?.fileCount || 0 }
@@ -812,6 +889,67 @@
     `;
   }
 
+  function renderMounts() {
+    const summary = state.bundle.mountSummary || {};
+    if (!summary.hasFile) {
+      refs.mountSummary.innerHTML = '<div class="empty-box">Mounts.json was not found for this account.</div>';
+      return;
+    }
+
+    const entries = summary.entries || [];
+    const typeBreakdown = summary.types || [];
+
+    refs.mountSummary.innerHTML = `
+      <div class="mini-summary-grid">
+        <article class="mini-summary-card">
+          <span class="mini-summary-label">Mounts</span>
+          <strong>${escapeHtml(formatNumber(summary.mountCount || 0))}</strong>
+        </article>
+        <article class="mini-summary-card">
+          <span class="mini-summary-label">Types</span>
+          <strong>${escapeHtml(formatNumber(summary.typeCount || 0))}</strong>
+        </article>
+        <article class="mini-summary-card">
+          <span class="mini-summary-label">Highest Level</span>
+          <strong>${escapeHtml(formatNumber(summary.highestLevel || 0))}</strong>
+        </article>
+      </div>
+
+      ${entries.length ? `
+        <div class="detail-grid">
+          <section class="detail-panel">
+            <p class="eyebrow">Type Breakdown</p>
+            <div class="detail-list">
+              ${typeBreakdown.map((entry) => `
+                <div class="detail-row">
+                  <span>${escapeHtml(humanizeKey(entry.mountType || 'Unknown'))}</span>
+                  <strong>${escapeHtml(formatNumber(entry.count || 0))}</strong>
+                </div>
+              `).join('') || '<div class="empty-box compact-empty">No mount types were detected.</div>'}
+            </div>
+          </section>
+
+          <section class="detail-panel">
+            <p class="eyebrow">Saved Mounts</p>
+            <div class="mount-grid">
+              ${entries.map((entry) => `
+                <article class="mount-card">
+                  <p class="eyebrow">Mount ${escapeHtml(entry.index + 1)}</p>
+                  <p class="mono">${escapeHtml(entry.mountName || 'Unnamed Mount')}</p>
+                  <div class="tag-list">
+                    <span class="tag">Level ${escapeHtml(entry.mountLevel ?? 0)}</span>
+                    <span class="tag">${escapeHtml(humanizeKey(entry.mountType || 'Unknown'))}</span>
+                    ${entry.mountIconName ? `<span class="tag">Icon ${escapeHtml(entry.mountIconName)}</span>` : ''}
+                  </div>
+                </article>
+              `).join('')}
+            </div>
+          </section>
+        </div>
+      ` : '<div class="empty-box">Mounts.json exists, but no saved mounts were detected.</div>'}
+    `;
+  }
+
   function renderProspectArchive() {
     const summary = state.bundle.prospectArchiveSummary || {};
     if (!summary.hasFolder) {
@@ -902,18 +1040,49 @@
     `;
   }
 
-  function renderFileList() {
-    const files = state.bundle.files || [];
-    const currentPath = state.currentRawPath;
-    refs.fileSelect.innerHTML = files.map((file) => `
-      <option value="${escapeHtml(file.relativePath)}">${escapeHtml(file.relativePath)}</option>
-    `).join('');
+  function updateRawEditorActionState() {
+    const files = state.bundle?.files || [];
+    const filteredFiles = getFilteredFiles();
+    const hasLoadedFile = !!state.currentRawPath;
+    const hasSelectedFile = !!state.selectedRawPath;
+    const loadedSelectionMatches = hasLoadedFile && state.currentRawPath === state.selectedRawPath;
 
-    if (currentPath && files.some((file) => file.relativePath === currentPath)) {
-      refs.fileSelect.value = currentPath;
-      state.currentRawPath = currentPath;
+    refs.fileFilterInput.disabled = !files.length;
+    refs.fileSelect.disabled = !filteredFiles.length;
+    refs.loadFileBtn.disabled = !hasSelectedFile;
+    refs.formatJsonBtn.disabled = !hasLoadedFile;
+    refs.saveFileBtn.disabled = !loadedSelectionMatches;
+    refs.rawEditor.disabled = !hasLoadedFile;
+  }
+
+  function renderFileList() {
+    const files = state.bundle?.files || [];
+    const filteredFiles = getFilteredFiles();
+    const selectedPath = state.selectedRawPath;
+
+    if (!files.length) {
+      refs.fileSelect.innerHTML = '<option value="">No JSON files found</option>';
+      refs.fileListMeta.textContent = 'No JSON files were found under the selected account.';
+      refs.fileMeta.textContent = 'No JSON files were found under the selected account.';
+      refs.rawEditor.value = '';
+      state.currentRawPath = null;
+      state.selectedRawPath = null;
+      updateRawEditorActionState();
       return;
     }
+
+    if (!filteredFiles.length) {
+      refs.fileSelect.innerHTML = '<option value="">No files match current filter</option>';
+      refs.fileListMeta.textContent = `No JSON files match "${state.fileFilterText}".`;
+      refs.fileMeta.textContent = 'Adjust the file filter or clear it to load another JSON file.';
+      state.selectedRawPath = null;
+      updateRawEditorActionState();
+      return;
+    }
+
+    refs.fileSelect.innerHTML = filteredFiles.map((file) => `
+      <option value="${escapeHtml(file.relativePath)}">${escapeHtml(file.relativePath)}</option>
+    `).join('');
 
     const preferred = [
       'Profile.json',
@@ -921,20 +1090,29 @@
       'Accolades.json',
       'BestiaryData.json',
       'MetaInventory.json',
-      'Loadout/Loadouts.json'
+      'Loadout/Loadouts.json',
+      'Mounts.json'
     ];
-    const firstMatch = preferred.find((name) => files.some((file) => file.relativePath === name));
-    if (firstMatch) {
-      refs.fileSelect.value = firstMatch;
-      state.currentRawPath = firstMatch;
-    } else if (files[0]) {
-      refs.fileSelect.value = files[0].relativePath;
-      state.currentRawPath = files[0].relativePath;
+
+    if (selectedPath && filteredFiles.some((file) => file.relativePath === selectedPath)) {
+      state.selectedRawPath = selectedPath;
     } else {
-      state.currentRawPath = null;
-      refs.fileMeta.textContent = 'No JSON files were found under the selected account.';
-      refs.rawEditor.value = '';
+      const firstPreferred = preferred.find((name) => filteredFiles.some((file) => file.relativePath === name));
+      state.selectedRawPath = firstPreferred || filteredFiles[0].relativePath;
     }
+
+    refs.fileSelect.value = state.selectedRawPath;
+
+    let listMessage = state.fileFilterText
+      ? `Showing ${filteredFiles.length} of ${files.length} file(s) for "${state.fileFilterText}".`
+      : `Showing all ${files.length} file(s).`;
+
+    if (state.currentRawPath && state.selectedRawPath && state.currentRawPath !== state.selectedRawPath) {
+      listMessage += ` Click Load File to switch from ${state.currentRawPath} to ${state.selectedRawPath}.`;
+    }
+
+    refs.fileListMeta.textContent = listMessage;
+    updateRawEditorActionState();
   }
 
   function renderBackups() {
@@ -966,11 +1144,20 @@
               <p class="mono">${escapeHtml(backup.relativePath)}</p>
               <p class="file-meta">From ${escapeHtml(backup.sourceRelativePath || '')} | ${escapeHtml(formatByteSize(backup.size))} | ${escapeHtml(formatIsoTimestamp(backup.lastWriteTime || ''))}</p>
             </div>
-            <button type="button" class="danger-button delete-backup-btn" data-relative-path="${escapeHtml(backup.relativePath)}">Delete</button>
+            <div class="backup-actions">
+              <button type="button" class="ghost-button restore-backup-btn" data-relative-path="${escapeHtml(backup.relativePath)}">Restore</button>
+              <button type="button" class="danger-button delete-backup-btn" data-relative-path="${escapeHtml(backup.relativePath)}">Delete</button>
+            </div>
           </article>
         `).join('')}
       </div>
     `;
+
+    refs.backupSummary.querySelectorAll('.restore-backup-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        restoreBackup(button.dataset.relativePath).catch(handleError);
+      });
+    });
 
     refs.backupSummary.querySelectorAll('.delete-backup-btn').forEach((button) => {
       button.addEventListener('click', () => {
@@ -1039,12 +1226,13 @@
   async function loadAccounts() {
     setStatus('Scanning save root...');
     const payload = await api('/api/accounts');
-    state.saveRoot = payload.saveRoot;
-    state.accounts = payload.accounts || [];
+    applyAccountsPayload(payload);
 
     if (!state.accounts.length) {
       state.selectedAccountId = null;
       state.bundle = null;
+      state.currentRawPath = null;
+      state.selectedRawPath = null;
       renderAccounts();
       return;
     }
@@ -1076,14 +1264,15 @@
     renderBestiary();
     renderInventory();
     renderLoadouts();
+    renderMounts();
     renderProspectArchive();
     renderProspects();
     renderFileList();
     renderBackups();
     setStatus(`Loaded ${steamId}.`);
 
-    if (state.currentRawPath) {
-      await loadRawFile(state.currentRawPath);
+    if (state.selectedRawPath) {
+      await loadRawFile(state.selectedRawPath);
     }
   }
 
@@ -1099,10 +1288,43 @@
     });
     const payload = await api(`/api/file?${params.toString()}`);
     state.currentRawPath = payload.relativePath;
+    state.selectedRawPath = payload.relativePath;
     refs.fileSelect.value = payload.relativePath;
     refs.fileMeta.textContent = `${payload.relativePath} | ${payload.size} bytes | ${payload.lastWriteTime}`;
     refs.rawEditor.value = payload.content || '';
+    renderFileList();
     setStatus(`Loaded ${relativePath}.`);
+  }
+
+  async function setSaveRoot(saveRoot) {
+    setStatus('Updating save root...');
+    const payload = await api('/api/save-root', {
+      method: 'POST',
+      body: JSON.stringify({ saveRoot })
+    });
+    applyAccountsPayload(payload);
+    state.bundle = null;
+    state.currentRawPath = null;
+    state.selectedRawPath = null;
+    state.fileFilterText = '';
+    refs.fileFilterInput.value = '';
+    refs.rawEditor.value = '';
+    refs.fileMeta.textContent = 'Pick a file to begin.';
+    refs.fileListMeta.textContent = 'Showing all files.';
+
+    if (!state.accounts.length) {
+      state.selectedAccountId = null;
+      renderAccounts();
+      setStatus('Save root updated.');
+      return;
+    }
+
+    if (!state.selectedAccountId || !state.accounts.some((account) => account.steamId === state.selectedAccountId)) {
+      state.selectedAccountId = state.accounts[0].steamId;
+    }
+
+    renderAccounts();
+    await loadAccount(state.selectedAccountId);
   }
 
   async function saveProfile() {
@@ -1164,6 +1386,26 @@
     await loadAccount(state.selectedAccountId);
   }
 
+  async function restoreBackup(relativePath) {
+    if (!state.selectedAccountId || !relativePath) {
+      return;
+    }
+
+    if (!window.confirm(`Restore this backup over its original file?\n\n${relativePath}`)) {
+      return;
+    }
+
+    setStatus(`Restoring backup ${relativePath}...`);
+    const payload = await api(`/api/account/${encodeURIComponent(state.selectedAccountId)}/backup/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ relativePath })
+    });
+    state.selectedRawPath = payload.restoredPath || state.selectedRawPath;
+    const backupMessage = payload.backup ? ` Current file backed up as ${payload.backup}.` : '';
+    showToast(`Restored ${payload.restoredPath || relativePath}.${backupMessage}`);
+    await loadAccount(state.selectedAccountId);
+  }
+
   async function deleteAllBackups() {
     const backups = state.bundle?.backups || [];
     if (!state.selectedAccountId || !backups.length) {
@@ -1199,8 +1441,10 @@
   }
 
   function openRawShortcut(relativePath) {
-    refs.fileSelect.value = relativePath;
-    state.currentRawPath = relativePath;
+    refs.fileFilterInput.value = '';
+    state.fileFilterText = '';
+    state.selectedRawPath = relativePath;
+    renderFileList();
     loadRawFile(relativePath).catch(handleError);
   }
 
@@ -1211,6 +1455,21 @@
 
   refs.refreshAccountsBtn.addEventListener('click', () => {
     loadAccounts().catch(handleError);
+  });
+
+  refs.useSaveRootBtn.addEventListener('click', () => {
+    setSaveRoot(refs.saveRootInput.value.trim()).catch(handleError);
+  });
+
+  refs.saveRootInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      setSaveRoot(refs.saveRootInput.value.trim()).catch(handleError);
+    }
+  });
+
+  refs.resetSaveRootBtn.addEventListener('click', () => {
+    setSaveRoot('').catch(handleError);
   });
 
   refs.reloadAccountBtn.addEventListener('click', () => {
@@ -1235,12 +1494,18 @@
     saveCharacters().catch(handleError);
   });
 
+  refs.fileFilterInput.addEventListener('input', () => {
+    state.fileFilterText = refs.fileFilterInput.value.trim();
+    renderFileList();
+  });
+
   refs.fileSelect.addEventListener('change', () => {
-    state.currentRawPath = refs.fileSelect.value;
+    state.selectedRawPath = refs.fileSelect.value || null;
+    renderFileList();
   });
 
   refs.loadFileBtn.addEventListener('click', () => {
-    loadRawFile(refs.fileSelect.value).catch(handleError);
+    loadRawFile(state.selectedRawPath).catch(handleError);
   });
 
   refs.formatJsonBtn.addEventListener('click', () => {
@@ -1274,6 +1539,10 @@
 
   refs.openLoadoutsBtn.addEventListener('click', () => {
     openRawShortcut('Loadout/Loadouts.json');
+  });
+
+  refs.openMountsBtn.addEventListener('click', () => {
+    openRawShortcut('Mounts.json');
   });
 
   refs.openProspectsFolderBtn.addEventListener('click', () => {
